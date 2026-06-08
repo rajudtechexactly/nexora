@@ -96,6 +96,38 @@ Realtime (next iteration): `php artisan reverb:start`.
 
 ---
 
+## Deploy to Render.com (Docker)
+
+The repo ships a production `Dockerfile` (nginx + php-fpm + queue worker under
+supervisor, listening on Render's `$PORT`) and a `render.yaml` Blueprint. The
+database stays external (Neon Postgres) — no Render DB is provisioned.
+
+1. **Push to GitHub** (Render deploys from a Git repo).
+2. **Render → New → Blueprint**, pick the repo. It reads `render.yaml`.
+3. **Set the secret env vars** (marked `sync: false`): `APP_KEY`, `APP_URL`,
+   `MOBILE_API_URL`, `DB_USERNAME`, `DB_PASSWORD`, `JWT_SECRET`,
+   `MAIL_USERNAME`, `MAIL_PASSWORD`.
+   - `APP_KEY` — `php artisan key:generate --show`
+   - `APP_URL` — this service's URL, e.g. `https://nexora-api.onrender.com`
+   - `MOBILE_API_URL` — `https://nexora-api.onrender.com/api/v1`
+4. **Deploy.** The container caches config/routes/views, runs `migrate --force`,
+   then serves on `/`. Health check: `/up`.
+
+> Local sanity check: `docker build -t nexora-api . && docker run --rm -p 8080:10000 --env-file .env nexora-api` → open `http://localhost:8080/up`.
+
+### Point the mobile app at the deployed API
+The on-device app reads `MOBILE_API_URL` (baked at bundle time). After the
+backend is live, set it in `.env` and rebuild the APK:
+```
+MOBILE_API_URL=https://nexora-api.onrender.com/api/v1
+php artisan native:package --android --build-type=release
+```
+On-device the app auto-switches sessions/cache/queue to in-memory drivers
+(`App\Providers\NativeAppServiceProvider`, keyed off `NATIVEPHP_RUNNING`) so the
+bundled Laravel never touches the credential-stripped database.
+
+---
+
 ## Mobile App (NativePHP — Android)
 
 The mobile app is a thin client: an on-device Laravel renders the Blade/Alpine UI

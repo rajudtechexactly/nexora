@@ -1,0 +1,81 @@
+# Render.com Blueprint — Docker runtime for the Nexora API.
+# Deploy: push this repo to GitHub, then in Render: New → Blueprint → pick the repo.
+# Database is external (Neon Postgres), so no Render DB is provisioned here.
+services:
+  - type: web
+    name: nexora-api
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /up
+    autoDeploy: true
+    envVars:
+      - key: APP_NAME
+        value: Nexora
+      - key: APP_ENV
+        value: production
+      - key: APP_DEBUG
+        value: "false"
+      # Generate locally with `php artisan key:generate --show` and paste it.
+      - key: APP_KEY
+        sync: false
+      # Set to this service's public URL, e.g. https://nexora-api.onrender.com
+      - key: APP_URL
+        sync: false
+      # The mobile app calls this. Set to "${APP_URL}/api/v1".
+      - key: MOBILE_API_URL
+        sync: false
+
+      # --- Database (Neon — use the DIRECT endpoint, not -pooler) ----------
+      - key: DB_CONNECTION
+        value: pgsql
+      - key: DB_HOST
+        value: ep-dark-dawn-aqxm1o18.c-8.us-east-1.aws.neon.tech
+      - key: DB_PORT
+        value: "5432"
+      - key: DB_DATABASE
+        value: neondb
+      - key: DB_USERNAME
+        sync: false
+      - key: DB_PASSWORD
+        sync: false
+      - key: DB_SSLMODE
+        value: require
+
+      # --- Drivers (no Redis on free tier; DB-backed is fine) --------------
+      - key: SESSION_DRIVER
+        value: database
+      - key: CACHE_STORE
+        value: database
+      - key: QUEUE_CONNECTION
+        value: database
+      - key: LOG_CHANNEL
+        value: stderr
+
+      # --- JWT --------------------------------------------------------------
+      - key: JWT_SECRET
+        sync: false
+      - key: JWT_ALGO
+        value: HS256
+      - key: JWT_TTL
+        value: "60"
+      - key: JWT_REFRESH_TTL
+        value: "20160"
+
+      # --- Mail (Gmail SMTP) ------------------------------------------------
+      - key: MAIL_MAILER
+        value: smtp
+      - key: MAIL_HOST
+        value: smtp.gmail.com
+      - key: MAIL_PORT
+        value: "465"
+      - key: MAIL_SCHEME
+        value: smtps
+      - key: MAIL_USERNAME
+        sync: false
+      - key: MAIL_PASSWORD
+        sync: false
+      - key: MAIL_FROM_ADDRESS
+        value: hello@example.com
+      - key: MAIL_FROM_NAME
+        value: Nexora
