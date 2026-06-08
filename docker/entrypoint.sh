@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 set -e
 
+# Allow one-off commands (e.g. `docker run <img> php artisan migrate`) to run
+# directly, skipping the web boot sequence. Render starts the container with no
+# command override, so the full boot below runs for the web service.
+if [ "$#" -gt 0 ]; then
+    exec "$@"
+fi
+
 # Render injects $PORT; default to 10000 for local `docker run`.
 export PORT="${PORT:-10000}"
 
