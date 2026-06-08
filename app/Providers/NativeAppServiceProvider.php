@@ -44,6 +44,12 @@ class NativeAppServiceProvider extends ServiceProvider
             // Run any dispatched work inline; there is no queue worker on device.
             'queue.default' => 'sync',
 
+            // Broadcasting is not used on-device (chat is a later iteration), and
+            // REVERB_APP_SECRET is stripped at bundle time (cleanup_env_keys: *_SECRET),
+            // so resolving the reverb/Pusher driver at boot throws and the persistent
+            // runtime reports "Runtime not booted". Use the secret-less null driver.
+            'broadcasting.default' => 'null',
+
             // Guard: if any stray query runs, hit a local sqlite file instead of
             // attempting to dial the (unreachable, credential-stripped) Postgres.
             'database.default' => 'sqlite',
