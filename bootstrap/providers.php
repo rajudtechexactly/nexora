@@ -1,5 +1,6 @@
 <?php
 
+use App\Modules\Notification\Providers\NotificationEventServiceProvider;
 use App\Providers\AppServiceProvider;
 use App\Providers\BroadcastServiceProvider;
 use App\Providers\DomainServiceProvider;
@@ -12,4 +13,7 @@ return [
     AppServiceProvider::class,
     DomainServiceProvider::class,
     BroadcastServiceProvider::class,
+    // Translates domain events (friend requests, comments, reactions, messages)
+    // into in-app notifications.
+    NotificationEventServiceProvider::class,
 ];

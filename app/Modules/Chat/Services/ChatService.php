@@ -114,7 +114,9 @@ class ChatService extends BaseService
             return $message;
         });
 
-        broadcast(new MessageSent($message->load('sender.profile')));
+        // event() both runs listeners (notifications) and broadcasts the
+        // ShouldBroadcast event to the conversation channel.
+        event(new MessageSent($message->load('sender.profile')));
 
         return $message;
     }
