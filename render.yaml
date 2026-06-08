@@ -42,6 +42,28 @@ services:
       - key: DB_SSLMODE
         value: require
 
+      # --- Broadcasting / Reverb (WebSockets on the same service) ----------
+      # Reverb runs under supervisor on 127.0.0.1:8080; nginx proxies wss
+      # traffic at /reverb-ws/ so it shares the public $PORT.
+      - key: BROADCAST_CONNECTION
+        value: reverb
+      - key: REVERB_APP_ID
+        value: nexora
+      - key: REVERB_APP_KEY
+        value: nexora-key
+      - key: REVERB_APP_SECRET
+        sync: false
+      - key: REVERB_SERVER_HOST
+        value: 127.0.0.1
+      - key: REVERB_SERVER_PORT
+        value: "8080"
+      - key: REVERB_HOST
+        value: 127.0.0.1
+      - key: REVERB_PORT
+        value: "8080"
+      - key: REVERB_SCHEME
+        value: http
+
       # --- Drivers (no Redis on free tier; DB-backed is fine) --------------
       - key: SESSION_DRIVER
         value: database
