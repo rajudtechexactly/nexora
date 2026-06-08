@@ -22,3 +22,17 @@
 Homestead.json
 Homestead.yaml
 Thumbs.db
+
+# Secrets — never commit the signing keystore
+*.jks
+*.keystore
+
+# NativePHP mobile build output + Android toolchain (large, not needed by Render)
+/nativephp
+*.apk
+*.aab
+/android-sdk
+/android-tools
+
+# Build artifacts
+/storage/app/native-build
