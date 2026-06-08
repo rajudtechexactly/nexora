@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(php --version)",
+      "Bash(composer --version)",
+      "Bash(git --version)",
+      "Bash(docker --version)",
+      "Bash(ffmpeg -version)",
+      "Bash(psql --version)",
+      "Bash(npm --version)",
+      "PowerShell(composer *)",
+      "PowerShell(Remove-Item *)",
+      "PowerShell(php artisan vendor:publish --provider=\"PHPOpenSourceSaver\\\\JWTAuth\\\\Providers\\\\LaravelServiceProvider\" --no-interaction 2>&1 | Select-Object -Last 5; Write-Output \"=== jwt secret ===\"; php artisan jwt:secret --force --no-interaction 2>&1 | Select-Object -Last 5; Write-Output \"=== DB test ===\"; php artisan db:show 2>&1 | Select-Object -Last 20)",
+      "PowerShell(php artisan install:broadcasting --no-interaction --without-node 2>&1 | Select-Object -Last 20; Write-Output \"=== files ===\"; Test-Path config\\\\broadcasting.php; Test-Path routes\\\\channels.php)",
+      "PowerShell(php artisan vendor:publish --provider=\"Laravel\\\\Reverb\\\\ReverbServiceProvider\" --no-interaction 2>&1 | Select-Object -Last 8; Write-Output \"=== reverb cfg ===\"; Test-Path config\\\\reverb.php)",
+      "PowerShell(php artisan migrate --force 2>&1 | Select-Object -Last 25)",
+      "PowerShell(php artisan migrate --force 2>&1 | Select-Object -Last 20)",
+      "PowerShell(php artisan tinker --execute=\"try { DB::statement\\('create table zz_probe \\(id bigint generated always as identity primary key, name varchar\\(255\\) not null, dob date null\\)'\\); echo 'CREATE OK'; DB::statement\\('create index zz_probe_name_idx on zz_probe \\(name\\)'\\); echo ' INDEX OK'; DB::statement\\('drop table zz_probe'\\); echo ' DROPPED'; } catch \\(\\\\Throwable \\\\$e\\) { echo 'ERR: '.\\\\$e->getMessage\\(\\); }\" 2>&1 | Select-Object -Last 12)"
+    ]
+  }
+}
