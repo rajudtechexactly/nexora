@@ -8,13 +8,13 @@ use App\Modules\Auth\Http\Requests\ChangePasswordRequest;
 use App\Modules\Auth\Http\Requests\ForgotPasswordRequest;
 use App\Modules\Auth\Http\Requests\LoginRequest;
 use App\Modules\Auth\Http\Requests\RegisterRequest;
+use App\Modules\Auth\Http\Requests\ResendOtpRequest;
 use App\Modules\Auth\Http\Requests\ResetPasswordRequest;
+use App\Modules\Auth\Http\Requests\VerifyOtpRequest;
 use App\Modules\Auth\Services\AuthService;
 use App\Modules\Shared\Http\Controllers\ApiController;
 use App\Modules\User\Http\Resources\ProfileResource;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Password;
 
 class AuthController extends ApiController
 {
@@ -24,19 +24,48 @@ class AuthController extends ApiController
 
     public function register(RegisterRequest $request): JsonResponse
     {
-        $payload = $this->auth->register($request->validated());
+        $user = $this->auth->register($request->validated());
 
-        return $this->created($this->authResponse($payload), 'Registration successful. Please verify your email.');
+        return $this->created([
+            'email'                 => $user->email,
+            'verification_required' => true,
+        ], 'Registration successful. We emailed a verification code to complete your sign-in.');
+    }
+
+    public function verifyOtp(VerifyOtpRequest $request): JsonResponse
+    {
+        $payload = $this->auth->verifyRegistrationOtp(
+            (string) $request->string('email'),
+            (string) $request->string('otp'),
+        );
+
+        return $this->ok($this->authResponse($payload), 'Email verified. You are now signed in.');
+    }
+
+    public function resendOtp(ResendOtpRequest $request): JsonResponse
+    {
+        $this->auth->resendRegistrationOtp((string) $request->string('email'));
+
+        return $this->ok(message: 'If your account needs verification, a new code has been sent.');
     }
 
     public function login(LoginRequest $request): JsonResponse
     {
-        $payload = $this->auth->login(
+        $result = $this->auth->login(
             (string) $request->string('login'),
             (string) $request->string('password'),
         );
 
-        return $this->ok($this->authResponse($payload), 'Logged in successfully.');
+        if (($result['status'] ?? null) === 'email_not_verified') {
+            return $this->fail(
+                'Your email is not verified yet. We have sent a new verification code to your email.',
+                403,
+                ['email' => [$result['email']]],
+                'email_not_verified',
+            );
+        }
+
+        return $this->ok($this->authResponse($result), 'Logged in successfully.');
     }
 
     public function logout(): JsonResponse
@@ -58,39 +87,23 @@ class AuthController extends ApiController
         return $this->ok(new ProfileResource($this->auth->me()));
     }
 
-    public function verifyEmail(Request $request, int $id, string $hash): JsonResponse
-    {
-        $user = $this->auth->verifyEmail($id, $hash);
-
-        return $this->ok(['verified' => true, 'email' => $user->email], 'Email verified successfully.');
-    }
-
-    public function resendVerification(Request $request): JsonResponse
-    {
-        $sent = $this->auth->resendVerification($request->user());
-
-        return $sent
-            ? $this->ok(message: 'Verification email sent.')
-            : $this->ok(message: 'Your email is already verified.');
-    }
-
     public function forgotPassword(ForgotPasswordRequest $request): JsonResponse
     {
-        $status = $this->auth->sendPasswordResetLink((string) $request->string('email'));
+        $this->auth->forgotPassword((string) $request->string('email'));
 
-        // Always return success-shaped to avoid leaking which emails exist.
-        return $status === Password::RESET_LINK_SENT
-            ? $this->ok(message: 'Password reset link sent to your email.')
-            : $this->ok(message: 'If that email exists, a reset link has been sent.');
+        // Always success-shaped to avoid leaking which emails exist.
+        return $this->ok(message: 'If that email exists, a password reset code has been sent.');
     }
 
     public function resetPassword(ResetPasswordRequest $request): JsonResponse
     {
-        $status = $this->auth->resetPassword($request->only('email', 'password', 'password_confirmation', 'token'));
+        $this->auth->resetPassword(
+            (string) $request->string('email'),
+            (string) $request->string('otp'),
+            (string) $request->string('password'),
+        );
 
-        return $status === Password::PASSWORD_RESET
-            ? $this->ok(message: 'Password has been reset. You can now log in.')
-            : $this->fail(__($status), 422, code: 'reset_failed');
+        return $this->ok(message: 'Password has been reset. You can now log in.');
     }
 
     public function changePassword(ChangePasswordRequest $request): JsonResponse

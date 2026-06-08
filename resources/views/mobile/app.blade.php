@@ -49,6 +49,9 @@
                        class="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm outline-none focus:border-brand">
                 <input x-model="forms.login.password" type="password" placeholder="Password" required
                        class="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm outline-none focus:border-brand">
+                <div class="text-right">
+                    <button type="button" @click="go('forgot')" class="text-xs font-semibold text-brand">Forgot password?</button>
+                </div>
                 <p x-show="error" class="text-sm text-red-600" x-text="error"></p>
                 <button type="submit" :disabled="loading"
                         class="w-full rounded-xl bg-brand py-3 font-semibold text-white disabled:opacity-50">
@@ -89,6 +92,89 @@
             <p class="mt-6 text-center text-sm text-gray-500">
                 Already have an account?
                 <button @click="go('login')" class="font-semibold text-brand">Log in</button>
+            </p>
+        </div>
+    </template>
+
+    <!-- ===================== VERIFY OTP ===================== -->
+    <template x-if="screen === 'otp'">
+        <div class="flex h-full flex-col justify-center px-6">
+            <div class="mb-8 text-center">
+                <div class="mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-2xl bg-brand text-3xl text-white">✉️</div>
+                <h1 class="text-2xl font-extrabold text-brand">Verify your email</h1>
+                <p class="mt-1 text-sm text-gray-500">Enter the code we sent to</p>
+                <p class="text-sm font-semibold text-gray-700" x-text="forms.otp.email"></p>
+            </div>
+            <form @submit.prevent="doVerifyOtp()" class="space-y-3">
+                <input x-model="forms.otp.otp" type="text" inputmode="numeric" autocomplete="one-time-code"
+                       maxlength="6" placeholder="6-digit code" required
+                       class="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-center text-lg tracking-[0.4em] outline-none focus:border-brand">
+                <p x-show="error" class="text-sm text-red-600" x-text="error"></p>
+                <button type="submit" :disabled="loading"
+                        class="w-full rounded-xl bg-brand py-3 font-semibold text-white disabled:opacity-50">
+                    <span x-text="loading ? 'Verifying…' : 'Verify & Continue'"></span>
+                </button>
+            </form>
+            <p class="mt-6 text-center text-sm text-gray-500">
+                Didn't get it?
+                <button @click="doResendOtp()" class="font-semibold text-brand">Resend code</button>
+            </p>
+            <p class="mt-2 text-center text-sm text-gray-400">
+                <button @click="go('login')" class="font-semibold">Back to login</button>
+            </p>
+        </div>
+    </template>
+
+    <!-- ===================== FORGOT PASSWORD ===================== -->
+    <template x-if="screen === 'forgot'">
+        <div class="flex h-full flex-col justify-center px-6">
+            <div class="mb-8 text-center">
+                <div class="mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-2xl bg-brand text-3xl text-white">🔑</div>
+                <h1 class="text-2xl font-extrabold text-brand">Reset password</h1>
+                <p class="mt-1 text-sm text-gray-500">We'll email you a verification code</p>
+            </div>
+            <form @submit.prevent="doForgot()" class="space-y-3">
+                <input x-model="forms.forgot.email" type="email" placeholder="Your account email" required
+                       class="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm outline-none focus:border-brand">
+                <p x-show="error" class="text-sm text-red-600" x-text="error"></p>
+                <button type="submit" :disabled="loading"
+                        class="w-full rounded-xl bg-brand py-3 font-semibold text-white disabled:opacity-50">
+                    <span x-text="loading ? 'Sending…' : 'Send code'"></span>
+                </button>
+            </form>
+            <p class="mt-6 text-center text-sm text-gray-400">
+                <button @click="go('login')" class="font-semibold">Back to login</button>
+            </p>
+        </div>
+    </template>
+
+    <!-- ===================== RESET PASSWORD ===================== -->
+    <template x-if="screen === 'reset'">
+        <div class="flex h-full flex-col justify-center overflow-y-auto px-6 py-10">
+            <div class="mb-6 text-center">
+                <div class="mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-2xl bg-brand text-3xl text-white">🔐</div>
+                <h1 class="text-2xl font-extrabold text-brand">Set a new password</h1>
+                <p class="mt-1 text-sm text-gray-500">Enter the code sent to</p>
+                <p class="text-sm font-semibold text-gray-700" x-text="forms.reset.email"></p>
+            </div>
+            <form @submit.prevent="doReset()" class="space-y-3">
+                <input x-model="forms.reset.otp" type="text" inputmode="numeric" maxlength="6" placeholder="6-digit code" required
+                       class="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-center text-lg tracking-[0.4em] outline-none focus:border-brand">
+                <input x-model="forms.reset.password" type="password" placeholder="New password (min 8, letters + numbers)" required
+                       class="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm outline-none focus:border-brand">
+                <input x-model="forms.reset.password_confirmation" type="password" placeholder="Confirm new password" required
+                       class="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm outline-none focus:border-brand">
+                <template x-for="(msgs, field) in fieldErrors" :key="field">
+                    <p class="text-sm text-red-600" x-text="msgs[0]"></p>
+                </template>
+                <button type="submit" :disabled="loading"
+                        class="w-full rounded-xl bg-brand py-3 font-semibold text-white disabled:opacity-50">
+                    <span x-text="loading ? 'Resetting…' : 'Reset password'"></span>
+                </button>
+            </form>
+            <p class="mt-6 text-center text-sm text-gray-500">
+                Didn't get it?
+                <button @click="doForgot()" class="font-semibold text-brand">Resend code</button>
             </p>
         </div>
     </template>
@@ -386,6 +472,9 @@
             forms: {
                 login: { login: '', password: '' },
                 register: { name: '', username: '', email: '', password: '', password_confirmation: '' },
+                otp: { email: '', otp: '' },
+                forgot: { email: '' },
+                reset: { email: '', otp: '', password: '', password_confirmation: '' },
                 edit: { name: '', bio: '', location: '', work: '', website: '' },
                 password: { current_password: '', password: '', password_confirmation: '' },
             },
@@ -435,24 +524,69 @@
             // ---- Auth ----
             async doLogin() {
                 this.loading = true; this.error = '';
-                const { ok, json } = await this.api('POST', '/auth/login', this.forms.login);
+                const { ok, status, json } = await this.api('POST', '/auth/login', this.forms.login);
                 this.loading = false;
+                // Account exists but email isn't verified yet → go enter the OTP.
+                if (status === 403 && json.code === 'email_not_verified') {
+                    this.forms.otp = { email: (json.errors && json.errors.email && json.errors.email[0]) || this.forms.login.login, otp: '' };
+                    this.showToast(json.message || 'Verify your email to continue.');
+                    this.go('otp');
+                    return;
+                }
                 if (!ok) { this.error = json.message || 'Login failed.'; return; }
-                this.token = json.data.access_token;
-                localStorage.setItem(TOKEN_KEY, this.token);
-                this.me = json.data.user;
-                this.screen = 'main'; this.bootMain();
+                this.finishAuth(json);
             },
 
             async doRegister() {
-                this.loading = true; this.fieldErrors = {};
+                this.loading = true; this.fieldErrors = {}; this.error = '';
                 const { ok, json } = await this.api('POST', '/auth/register', this.forms.register);
                 this.loading = false;
                 if (!ok) { this.fieldErrors = json.errors || { _: [json.message] }; return; }
+                // No token yet — verify the emailed OTP to finish signing in.
+                this.forms.otp = { email: this.forms.register.email, otp: '' };
+                this.showToast(json.message || 'We sent a verification code to your email.');
+                this.go('otp');
+            },
+
+            async doVerifyOtp() {
+                this.loading = true; this.error = '';
+                const { ok, json } = await this.api('POST', '/auth/verify-otp', this.forms.otp);
+                this.loading = false;
+                if (!ok) { this.error = this.firstError(json); return; }
+                this.showToast('Welcome to ' + this.appName + '!');
+                this.finishAuth(json);
+            },
+
+            async doResendOtp() {
+                this.error = '';
+                const { json } = await this.api('POST', '/auth/resend-otp', { email: this.forms.otp.email });
+                this.showToast(json.message || 'A new code has been sent.');
+            },
+
+            async doForgot() {
+                this.loading = true; this.error = '';
+                const { json } = await this.api('POST', '/auth/forgot-password', this.forms.forgot);
+                this.loading = false;
+                this.forms.reset = { email: this.forms.forgot.email, otp: '', password: '', password_confirmation: '' };
+                this.showToast(json.message || 'If that email exists, a reset code has been sent.');
+                this.go('reset');
+            },
+
+            async doReset() {
+                this.loading = true; this.error = ''; this.fieldErrors = {};
+                const { ok, json } = await this.api('POST', '/auth/reset-password', this.forms.reset);
+                this.loading = false;
+                if (!ok) { this.fieldErrors = json.errors || {}; this.error = this.firstError(json); return; }
+                this.showToast('Password reset. Please log in.');
+                this.forms.login = { login: this.forms.reset.email, password: '' };
+                this.go('login');
+            },
+
+            // Persist token + user and enter the app.
+            finishAuth(json) {
                 this.token = json.data.access_token;
                 localStorage.setItem(TOKEN_KEY, this.token);
                 this.me = json.data.user;
-                this.showToast('Welcome to ' + this.appName + '!');
                 this.screen = 'main'; this.bootMain();
             },
 

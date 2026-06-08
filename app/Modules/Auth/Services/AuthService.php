@@ -4,45 +4,50 @@ declare(strict_types=1);
 
 namespace App\Modules\Auth\Services;
 
+use App\Modules\Auth\Models\EmailOtp;
 use App\Modules\Shared\Services\BaseService;
 use App\Modules\User\Models\Profile;
 use App\Modules\User\Models\User;
 use App\Modules\User\Repositories\Contracts\UserRepositoryInterface;
-use Illuminate\Auth\Events\Registered;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Password;
 use Illuminate\Validation\ValidationException;
-use PHPOpenSourceSaver\JWTAuth\Facades\JWTAuth;
 
 /**
  * Orchestrates all authentication use-cases. Controllers stay thin; every
- * business rule (token issuance, verification, reset) lives here.
+ * business rule (registration, OTP verification, token issuance, reset) lives
+ * here.
+ *
+ * Auth flow: a new account is created unverified and is NOT logged in. A
+ * verification OTP is emailed (queued); the user submits it to verify their
+ * email and receive their first token. Password resets are likewise gated by
+ * an emailed OTP rather than a reset link.
  */
 class AuthService extends BaseService
 {
-    public function __construct(private readonly UserRepositoryInterface $users)
-    {
+    public function __construct(
+        private readonly UserRepositoryInterface $users,
+        private readonly OtpService $otp,
+    ) {
     }
 
     /**
-     * Register a new user, create their empty profile, dispatch the
-     * verification email, and return an authenticated token pair.
-     *
-     * @return array{user: User, token: string, expires_in: int}
+     * Register a new user (unverified) with an empty profile and email them a
+     * verification OTP. No token is issued — the account cannot log in until
+     * the OTP is verified.
      */
-    public function register(array $data): array
+    public function register(array $data): User
     {
         $user = $this->transaction(function () use ($data): User {
             /** @var User $user */
             $user = $this->users->create([
-                'name'          => $data['name'],
-                'username'      => $data['username'],
-                'email'         => $data['email'],
-                'phone'         => $data['phone'] ?? null,
-                'date_of_birth' => $data['date_of_birth'] ?? null,
-                'gender'        => $data['gender'] ?? null,
-                'password'      => $data['password'],
+                'name'           => $data['name'],
+                'username'       => $data['username'],
+                'email'          => $data['email'],
+                'phone'          => $data['phone'] ?? null,
+                'date_of_birth'  => $data['date_of_birth'] ?? null,
+                'gender'         => $data['gender'] ?? null,
+                'password'       => $data['password'],
                 'last_active_at' => now(),
             ]);
 
@@ -51,16 +56,61 @@ class AuthService extends BaseService
             return $user;
         });
 
-        // Fires the Registered listener which sends the verification email.
-        event(new Registered($user));
+        $this->otp->send($user, EmailOtp::PURPOSE_REGISTRATION);
 
-        return $this->tokenPayload(JWTAuth::fromUser($user), $user->load('profile'));
+        return $user;
+    }
+
+    /**
+     * Verify the registration OTP, mark the email verified, and issue the
+     * first authenticated token.
+     *
+     * @return array{user: User, token: string, expires_in: int}
+     *
+     * @throws ValidationException
+     */
+    public function verifyRegistrationOtp(string $email, string $code): array
+    {
+        $user = $this->users->findByEmail($email);
+
+        // Same error as an invalid code so we never reveal which emails exist.
+        if (! $user) {
+            $this->rejectOtp();
+        }
+
+        $this->otp->verify($user, EmailOtp::PURPOSE_REGISTRATION, $code);
+
+        if (! $user->hasVerifiedEmail()) {
+            $user->markEmailAsVerified();
+        }
+
+        $token = Auth::guard('api')->login($user);
+        $user->forceFill(['last_active_at' => now()])->save();
+
+        return $this->tokenPayload($token, $user->load('profile'));
+    }
+
+    /**
+     * Re-send a registration OTP. Always succeeds outwardly (no enumeration);
+     * only actually sends when an unverified account matches.
+     */
+    public function resendRegistrationOtp(string $email): void
+    {
+        $user = $this->users->findByEmail($email);
+
+        if ($user && ! $user->hasVerifiedEmail()) {
+            $this->otp->send($user, EmailOtp::PURPOSE_REGISTRATION);
+        }
     }
 
     /**
      * Authenticate with email-or-username + password.
      *
-     * @return array{user: User, token: string, expires_in: int}
+     * Returns a discriminated result:
+     *  - ['status' => 'authenticated', user, token, expires_in]
+     *  - ['status' => 'email_not_verified', email]  (a fresh OTP is emailed)
+     *
+     * @return array<string, mixed>
      *
      * @throws ValidationException
      */
@@ -80,10 +130,17 @@ class AuthService extends BaseService
             ]);
         }
 
+        if (! $user->hasVerifiedEmail()) {
+            // Issue a fresh code so the client can route to the OTP screen.
+            $this->otp->send($user, EmailOtp::PURPOSE_REGISTRATION);
+
+            return ['status' => 'email_not_verified', 'email' => $user->email];
+        }
+
         $token = Auth::guard('api')->login($user);
         $user->forceFill(['last_active_at' => now()])->save();
 
-        return $this->tokenPayload($token, $user->load('profile'));
+        return ['status' => 'authenticated'] + $this->tokenPayload($token, $user->load('profile'));
     }
 
     public function logout(): void
@@ -114,55 +171,34 @@ class AuthService extends BaseService
     }
 
     /**
-     * Mark a user's email verified after validating the signed-link hash.
+     * Email a password-reset OTP. Always success-shaped to avoid leaking which
+     * emails are registered.
+     */
+    public function forgotPassword(string $email): void
+    {
+        $user = $this->users->findByEmail($email);
+
+        if ($user) {
+            $this->otp->send($user, EmailOtp::PURPOSE_PASSWORD_RESET);
+        }
+    }
+
+    /**
+     * Reset a password after validating the emailed OTP.
      *
      * @throws ValidationException
      */
-    public function verifyEmail(int $userId, string $hash): User
+    public function resetPassword(string $email, string $code, string $newPassword): void
     {
-        /** @var User $user */
-        $user = $this->users->findOrFail($userId);
+        $user = $this->users->findByEmail($email);
 
-        if (! hash_equals($hash, sha1($user->getEmailForVerification()))) {
-            throw ValidationException::withMessages([
-                'hash' => ['Invalid verification link.'],
-            ]);
+        if (! $user) {
+            $this->rejectOtp();
         }
 
-        if (! $user->hasVerifiedEmail()) {
-            $user->markEmailAsVerified();
-        }
+        $this->otp->verify($user, EmailOtp::PURPOSE_PASSWORD_RESET, $code);
 
-        return $user;
-    }
-
-    public function resendVerification(User $user): bool
-    {
-        if ($user->hasVerifiedEmail()) {
-            return false;
-        }
-
-        $user->sendEmailVerificationNotification();
-
-        return true;
-    }
-
-    /**
-     * Trigger a password-reset email. Returns the broker status string.
-     */
-    public function sendPasswordResetLink(string $email): string
-    {
-        return Password::broker()->sendResetLink(['email' => $email]);
-    }
-
-    /**
-     * Complete a password reset using the emailed token.
-     */
-    public function resetPassword(array $credentials): string
-    {
-        return Password::broker()->reset($credentials, function (User $user, string $password): void {
-            $user->forceFill(['password' => Hash::make($password)])->save();
-        });
+        $user->forceFill(['password' => Hash::make($newPassword)])->save();
     }
 
     /**
@@ -179,6 +215,16 @@ class AuthService extends BaseService
         }
 
         $user->forceFill(['password' => Hash::make($new)])->save();
+    }
+
+    /**
+     * @throws ValidationException
+     */
+    private function rejectOtp(): never
+    {
+        throw ValidationException::withMessages([
+            'otp' => ['The code is invalid or has expired. Please request a new one.'],
+        ]);
     }
 
     /**

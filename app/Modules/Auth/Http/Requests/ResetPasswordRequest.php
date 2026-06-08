@@ -18,8 +18,8 @@ class ResetPasswordRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'token'    => ['required', 'string'],
             'email'    => ['required', 'email'],
+            'otp'      => ['required', 'string', 'digits:'.(int) config('otp.length', 6)],
             'password' => ['required', 'confirmed', Password::min(8)->letters()->numbers()],
         ];
     }

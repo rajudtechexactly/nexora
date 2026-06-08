@@ -2,9 +2,6 @@
 
 namespace App\Providers;
 
-use Illuminate\Auth\Events\Registered;
-use Illuminate\Auth\Listeners\SendEmailVerificationNotification;
-use Illuminate\Support\Facades\Event;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -19,10 +16,13 @@ class AppServiceProvider extends ServiceProvider
 
     /**
      * Bootstrap any application services.
+     *
+     * Note: account verification is handled by an emailed OTP issued from
+     * AuthService::register() (see App\Modules\Auth), not by the framework's
+     * signed-link verification listener.
      */
     public function boot(): void
     {
-        // Send the verification email whenever a user registers.
-        Event::listen(Registered::class, SendEmailVerificationNotification::class);
+        //
     }
 }

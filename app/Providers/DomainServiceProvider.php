@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Providers;
 
+use App\Modules\Auth\Repositories\Contracts\OtpRepositoryInterface;
+use App\Modules\Auth\Repositories\Eloquent\OtpRepository;
 use App\Modules\Friendship\Repositories\Contracts\FriendshipRepositoryInterface;
 use App\Modules\Friendship\Repositories\Eloquent\FriendshipRepository;
 use App\Modules\Post\Repositories\Contracts\CommentRepositoryInterface;
@@ -35,6 +37,7 @@ class DomainServiceProvider extends ServiceProvider
     /** @var array<class-string, class-string> */
     private array $repositories = [
         UserRepositoryInterface::class         => UserRepository::class,
+        OtpRepositoryInterface::class          => OtpRepository::class,
         FriendshipRepositoryInterface::class   => FriendshipRepository::class,
         PostRepositoryInterface::class         => PostRepository::class,
         CommentRepositoryInterface::class      => CommentRepository::class,
