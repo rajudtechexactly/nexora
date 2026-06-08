@@ -189,12 +189,23 @@
         <div class="flex h-full flex-col">
             <!-- App bar -->
             <header class="flex items-center justify-between bg-brand px-4 py-3 text-white shadow">
-                <div class="text-xl font-extrabold" x-text="appName"></div>
+                <div class="flex items-center gap-2">
+                    <span class="text-xl font-extrabold" x-text="appName"></span>
+                    <span class="h-2 w-2 rounded-full" :class="rt==='on' ? 'bg-green-400' : 'bg-white/30'"
+                          :title="rt==='on' ? 'Live' : 'Offline'"></span>
+                </div>
                 <button @click="go('settings')" class="flex h-9 w-9 items-center justify-center rounded-full bg-white/15">⚙️</button>
             </header>
 
             <!-- Content -->
-            <main class="flex-1 overflow-y-auto pb-2">
+            <main class="flex-1 overflow-y-auto pb-2"
+                  @touchstart.passive="ptrStart($event)" @touchmove.passive="ptrMove($event)" @touchend="ptrEnd()">
+                <!-- Pull-to-refresh indicator -->
+                <div class="flex items-center justify-center overflow-hidden text-xs text-gray-400"
+                     :style="`height:${refreshing ? 36 : pull}px`">
+                    <span x-show="refreshing">↻ Refreshing…</span>
+                    <span x-show="!refreshing && pull > 0" x-text="pull > 70 ? '↑ Release to refresh' : '↓ Pull to refresh'"></span>
+                </div>
 
                 <!-- ===== FEED ===== -->
                 <section x-show="tab === 'feed'" class="space-y-3 p-3">
@@ -694,8 +705,8 @@
             notifications: [], unread: 0,
             // calls
             incomingCall: null, activeCall: null, muted: false,
-            // realtime
-            echo: null, convChannel: null,
+            // realtime + pull-to-refresh
+            pusher: null, rt: 'off', pull: 0, refreshing: false,
             forms: {
                 login: { login: '', password: '' },
                 register: { name: '', username: '', email: '', password: '', password_confirmation: '' },
@@ -980,8 +991,8 @@
                 this.scrollMessages();
             },
             closeConversation() {
-                if (this.convChannel && this.echo) this.echo.leave('conversation.' + this.activeConv.id);
-                this.convChannel = null; this.activeConv = null; this.screen = 'main';
+                try { if (this.pusher && this.activeConv) this.pusher.unsubscribe('private-conversation.' + this.activeConv.id); } catch (e) {}
+                this.activeConv = null; this.screen = 'main';
                 this.loadConversations();
             },
             async sendMessage() {
@@ -1029,41 +1040,49 @@
                 }
             },
 
-            // ---- Realtime (Echo + Reverb) ----
+            // ---- Realtime (raw pusher-js → Reverb) ----
             setupRealtime() {
-                if (this.echo || !window.Echo || !this.me) return;
+                if (this.pusher || !window.Pusher || !this.me || !REVERB.key) return;
                 try {
-                    this.echo = new window.Echo({
-                        broadcaster: 'pusher',
-                        key: REVERB.key,
-                        cluster: 'mt1', // ignored when wsHost is set, but pusher-js requires it
+                    this.pusher = new window.Pusher(REVERB.key, {
                         wsHost: REVERB.host,
                         wsPort: REVERB.port,
                         wssPort: REVERB.port,
                         wsPath: REVERB.path,
                         forceTLS: REVERB.scheme === 'https',
                         enabledTransports: ['ws', 'wss'],
-                        disableStats: true,
-                        authEndpoint: API + '/broadcasting/auth',
-                        auth: { headers: { Authorization: 'Bearer ' + this.token } },
+                        cluster: 'mt1', // ignored when wsHost is set, but pusher-js requires a value
+                        enableStats: false,
+                        channelAuthorization: {
+                            endpoint: API + '/broadcasting/auth',
+                            headers: { Authorization: 'Bearer ' + this.token },
+                        },
                     });
-                    this.echo.private('user.' + this.me.id)
-                        .listen('.notification.created', (e) => this.onNotification(e.notification))
-                        .listen('.call.signal', (e) => this.onCallSignal(e));
-                } catch (err) { console.warn('Realtime unavailable', err); }
+                    const c = this.pusher.connection;
+                    c.bind('connected', () => { this.rt = 'on'; });
+                    c.bind('connecting', () => { this.rt = '...'; });
+                    c.bind('unavailable', () => { this.rt = 'off'; });
+                    c.bind('failed', () => { this.rt = 'off'; });
+                    c.bind('error', () => { this.rt = 'off'; });
+
+                    const me = this.pusher.subscribe('private-user.' + this.me.id);
+                    me.bind('notification.created', (d) => this.onNotification(d.notification));
+                    me.bind('call.signal', (d) => this.onCallSignal(d));
+                } catch (err) { this.rt = 'off'; console.warn('Realtime init failed', err); }
             },
             teardownRealtime() {
-                try { if (this.echo) this.echo.disconnect(); } catch (e) {}
-                this.echo = null; this.convChannel = null;
+                try { if (this.pusher) this.pusher.disconnect(); } catch (e) {}
+                this.pusher = null; this.rt = 'off';
             },
             subscribeConversation(id) {
-                if (!this.echo) return;
-                this.convChannel = this.echo.private('conversation.' + id)
-                    .listen('.message.sent', (e) => {
-                        if (this.activeConv && this.activeConv.id === id && !e.message.sender || (e.message.sender && e.message.sender.id !== this.me.id)) {
-                            this.appendMessage({ ...e.message, is_mine: e.message.sender && e.message.sender.id === this.me.id });
-                        }
-                    });
+                if (!this.pusher) return;
+                const ch = this.pusher.subscribe('private-conversation.' + id);
+                ch.bind('message.sent', (d) => {
+                    const m = d.message;
+                    if (!this.me || !m.sender || m.sender.id !== this.me.id) {
+                        this.appendMessage({ ...m, is_mine: false });
+                    }
+                });
             },
             onNotification(n) {
                 this.notifications.unshift({ ...n, read: false });
@@ -1184,6 +1203,35 @@
                 this.error = ''; this.fieldErrors = {};
                 this.screen = s;
             },
+
+            // ---- Pull to refresh ----
+            ptrStart(e) {
+                this._ptrEl = e.currentTarget;
+                this._ptrY = e.touches[0].clientY;
+                this._ptrOk = this._ptrEl.scrollTop <= 0;
+            },
+            ptrMove(e) {
+                if (!this._ptrOk || this.refreshing) return;
+                const dy = e.touches[0].clientY - this._ptrY;
+                this.pull = dy > 0 ? Math.min(dy * 0.5, 90) : 0;
+            },
+            async ptrEnd() {
+                const trigger = this.pull > 70;
+                this.pull = 0;
+                if (trigger) await this.refreshCurrent();
+            },
+            async refreshCurrent() {
+                this.refreshing = true;
+                try { await this.refreshTab(this.tab); this.showToast('Updated'); }
+                finally { this.refreshing = false; }
+            },
+            async refreshTab(t) {
+                if (t === 'feed') await this.loadFeed();
+                else if (t === 'people') { await this.loadFriends(); await this.loadRequests(); await this.loadSuggestions(); }
+                else if (t === 'chat') await this.loadConversations();
+                else if (t === 'alerts') await this.loadNotifications();
+                else if (t === 'profile') await this.loadMe();
+            },
             placeholder(name) {
                 const initials = (name || '?').split(' ').map(p => p[0]).slice(0, 2).join('').toUpperCase();
                 return 'data:image/svg+xml;utf8,' + encodeURIComponent(
@@ -1207,12 +1255,6 @@
     }
 </script>
 <script src="https://js.pusher.com/8.4.0/pusher.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/laravel-echo@1.16.1/dist/echo.iife.js"></script>
-<script>
-    // laravel-echo iife exposes Echo on window.Echo (or as default export holder).
-    window.Echo = window.Echo || (window.LaravelEcho && window.LaravelEcho.default) || null;
-    window.Pusher = window.Pusher || null;
-</script>
 <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js"></script>
 </body>
 </html>
