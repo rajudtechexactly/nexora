@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Modules\Post\Services;
 
 use App\Modules\Post\Events\PostReacted;
+use App\Modules\Post\Events\PostStatsUpdated;
+use App\Modules\Post\Models\Post;
 use App\Modules\Post\Models\Reaction;
 use App\Modules\Post\Repositories\Contracts\ReactionRepositoryInterface;
 use App\Modules\Shared\Services\BaseService;
@@ -50,6 +52,8 @@ class ReactionService extends BaseService
             event(new PostReacted($reaction));
         }
 
+        $this->broadcastStats($target);
+
         return $reaction;
     }
 
@@ -63,5 +67,16 @@ class ReactionService extends BaseService
                 $target->decrement('reactions_count');
             }
         });
+
+        $this->broadcastStats($target);
+    }
+
+    /** Broadcast a post's fresh counts to the public feed channel. */
+    private function broadcastStats(Model $target): void
+    {
+        if ($target instanceof Post) {
+            $target->refresh();
+            event(new PostStatsUpdated($target->id, (int) $target->reactions_count, (int) $target->comments_count));
+        }
     }
 }

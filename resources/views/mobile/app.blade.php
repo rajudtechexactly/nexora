@@ -332,7 +332,8 @@
                                             <div class="font-semibold" x-text="u.name"></div>
                                             <div class="text-xs text-gray-500" x-text="'@'+u.username"></div>
                                         </div>
-                                        <button @click="sendRequest(u.id, u)" class="rounded-lg bg-brand px-3 py-1.5 text-xs font-semibold text-white">Add</button>
+                                        <button x-show="!isRequested(u.id)" @click="sendRequest(u.id)" class="rounded-lg bg-brand px-3 py-1.5 text-xs font-semibold text-white">Add</button>
+                                        <button x-show="isRequested(u.id)" @click="cancel(u.id)" class="rounded-lg bg-gray-100 px-3 py-1.5 text-xs font-semibold text-gray-600">Cancel</button>
                                     </div>
                                 </template>
                                 <p x-show="!suggestions.length && !loading" class="py-4 text-center text-sm text-gray-400">No suggestions right now.</p>
@@ -915,13 +916,18 @@
                 const out = await this.api('GET', '/friends/requests/outgoing');
                 if (out.ok) this.outgoing = out.json.data || [];
             },
-            async sendRequest(id, fromList = null) {
+            async sendRequest(id) {
                 const { ok, json } = await this.api('POST', '/friends/requests/' + id);
                 if (!ok) { this.showToast(this.firstError(json)); return; }
                 this.showToast('Friend request sent');
-                if (fromList) this.suggestions = this.suggestions.filter(u => u.id !== id);
                 if (this.viewedUser && this.viewedUser.id === id) this.viewedUser.friendship_status = 'pending_outgoing';
-                this.loadRequests();
+                // Keep the person in "People you may know"; the button flips to
+                // Cancel once outgoing requests reload (isRequested() turns true).
+                await this.loadRequests();
+            },
+            // True when there's a pending outgoing request to this user.
+            isRequested(id) {
+                return this.outgoing.some(r => r.user && r.user.id === id);
             },
             async accept(id) {
                 const { ok, json } = await this.api('POST', '/friends/requests/' + id + '/accept');
@@ -1068,6 +1074,10 @@
                     const me = this.pusher.subscribe('private-user.' + this.me.id);
                     me.bind('notification.created', (d) => this.onNotification(d.notification));
                     me.bind('call.signal', (d) => this.onCallSignal(d));
+
+                    // Public feed channel: live reaction/comment counts for any post.
+                    const feed = this.pusher.subscribe('posts');
+                    feed.bind('post.stats', (d) => this.onPostStats(d));
                 } catch (err) { this.rt = 'off'; console.warn('Realtime init failed', err); }
             },
             teardownRealtime() {
@@ -1088,7 +1098,22 @@
                 this.notifications.unshift({ ...n, read: false });
                 this.unread++;
                 if (n.type === 'message') { this.loadConversations(); }
+                if (n.type === 'friend_request' || n.type === 'friend_accepted') {
+                    this.loadRequests(); this.loadFriends(); this.loadSuggestions();
+                }
                 this.showToast((n.actor ? n.actor.name : 'Someone') + ' ' + this.notifText(n));
+            },
+            // Live reaction/comment counts pushed on the public "posts" channel.
+            onPostStats(d) {
+                const p = this.feed.find(x => x.id === d.post_id);
+                if (p) { p.reactions_count = d.reactions_count; p.comments_count = d.comments_count; }
+                if (this.activePost && this.activePost.id === d.post_id) {
+                    this.activePost.reactions_count = d.reactions_count;
+                    this.activePost.comments_count = d.comments_count;
+                    this.api('GET', '/posts/' + d.post_id + '/comments').then(({ ok, json }) => {
+                        if (ok) this.comments = (json.data || []).slice().reverse();
+                    });
+                }
             },
 
             // ---- Calls (WebRTC) ----

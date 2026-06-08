@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Modules\Post\Services;
 
 use App\Modules\Post\Events\PostCommented;
+use App\Modules\Post\Events\PostStatsUpdated;
 use App\Modules\Post\Models\Comment;
 use App\Modules\Post\Models\Post;
 use App\Modules\Post\Models\Reaction;
@@ -52,6 +53,9 @@ class CommentService extends BaseService
 
         event(new PostCommented($comment));
 
+        $post->refresh();
+        event(new PostStatsUpdated($post->id, (int) $post->reactions_count, (int) $post->comments_count));
+
         return $comment->load('user.profile');
     }
 
@@ -83,5 +87,10 @@ class CommentService extends BaseService
             $comment->delete();
             $comment->post?->decrement('comments_count', $removed);
         });
+
+        if ($comment->post) {
+            $comment->post->refresh();
+            event(new PostStatsUpdated($comment->post->id, (int) $comment->post->reactions_count, (int) $comment->post->comments_count));
+        }
     }
 }
