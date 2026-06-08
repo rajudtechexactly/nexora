@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 set -e
 
-# Allow one-off commands (e.g. `docker run <img> php artisan migrate`) to run
-# directly, skipping the web boot sequence. Render starts the container with no
-# command override, so the full boot below runs for the web service.
-if [ "$#" -gt 0 ]; then
-    exec "$@"
-fi
+# This script ALWAYS runs the boot sequence (nginx config, caches, migrations)
+# and then hands off to the container command ($@), which defaults to the
+# Dockerfile CMD: supervisord (nginx + php-fpm + queue worker).
+#
+# Important on Render: leave the service's "Docker Command" BLANK so CMD runs.
+# Anything you put there replaces CMD — set it to
+#   supervisord -c /etc/supervisor/conf.d/supervisord.conf
+# if you must set one, or the queue worker won't start.
 
 # Render injects $PORT; default to 10000 for local `docker run`.
 export PORT="${PORT:-10000}"
@@ -32,5 +34,7 @@ if [ "${RUN_MIGRATIONS:-true}" = "true" ]; then
     php artisan migrate --force --no-interaction || echo "!! migrate failed (continuing)"
 fi
 
-echo "==> Starting supervisor (nginx + php-fpm + queue)"
-exec supervisord -c /etc/supervisor/conf.d/supervisord.conf
+echo "==> Handing off to: ${*:-<Dockerfile CMD: supervisord>}"
+# Default CMD is supervisord (nginx + php-fpm + queue worker). A one-off like
+# `docker run <img> php artisan tinker` still gets the boot sequence above.
+exec "$@"

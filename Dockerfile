@@ -48,4 +48,8 @@ RUN chmod +x /usr/local/bin/entrypoint
 ENV PORT=10000
 EXPOSE 10000
 
+# entrypoint runs the boot sequence then execs CMD. CMD is supervisor, which
+# starts nginx + php-fpm + the queue worker. Keep Render's "Docker Command"
+# blank so this CMD runs (anything there replaces it and kills the worker).
 ENTRYPOINT ["entrypoint"]
+CMD ["supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
