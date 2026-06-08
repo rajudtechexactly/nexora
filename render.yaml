@@ -75,7 +75,9 @@ services:
         sync: false
       - key: MAIL_PASSWORD
         sync: false
+      # Gmail only lets you send "from" the authenticated account (or an alias).
+      # Using a foreign address (e.g. hello@example.com) gets rejected/spam-filed.
       - key: MAIL_FROM_ADDRESS
-        value: hello@example.com
+        value: noreply@ggapparels.in
       - key: MAIL_FROM_NAME
         value: Nexora
