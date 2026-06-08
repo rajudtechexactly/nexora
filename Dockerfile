@@ -24,6 +24,9 @@ WORKDIR /var/www/html
 
 # --- PHP / OPcache production tuning ---------------------------------------
 COPY docker/php.ini /usr/local/etc/php/conf.d/zz-nexora.ini
+# Cap php-fpm workers (ondemand) so the 512MB box has room for Reverb + queue.
+# Overwrites the default www pool (avoids a duplicate [www] definition).
+COPY docker/php-fpm-pool.conf /usr/local/etc/php-fpm.d/www.conf
 
 # --- Composer dependencies (cached layer) ----------------------------------
 COPY composer.json composer.lock ./
